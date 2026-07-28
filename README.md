@@ -111,41 +111,7 @@ Open your browser and navigate to:
 
 ---
 
-## ☁️ Live Cloud Deployment (Railway / Render)
 
-The project includes `Procfile`, `requirements.txt`, and `railway.json` for 1-click cloud deployment:
-
-### Deploy to **Railway** (Recommended):
-1. Log in to **[railway.app](https://railway.app)** with GitHub.
-2. Click **New Project** → **Deploy from GitHub repo**.
-3. Select `Abhishek84094/Squid-Game--RedLight-GreenLight-Using-CV`.
-4. Railway will automatically build using `Procfile`.
-5. Under **Settings** → **Networking** → Click **Generate Domain**.
-
-### Deploy to **Render**:
-1. Log in to **[render.com](https://render.com)** with GitHub.
-2. Click **New +** → **Web Service** → Select this repository.
-3. Build Command: `pip install -r requirements.txt`
-4. Start Command: `uvicorn server.main:app --host 0.0.0.0 --port $PORT`
-
----
-
-## 👥 How Web Multiplayer Works
-
-1. **Host a Match**: Click **Multiplayer** → **Create Room** to generate a 4-letter Room Code (e.g. `SQID`).
-2. **Join a Match**: Friends open the app on their devices, enter the room code, and click **Join**.
-3. **Synchronized Competition**:
-   - Everyone's webcam tracks physical pose movement in real-time.
-   - All players run together on a shared track during **GREEN LIGHT** and freeze during **RED LIGHT**.
-   - Server evaluates eliminations and determines the winner live!
-
----
-
-## 🔒 Privacy & Security
-
-User privacy is strictly enforced:
-- **Zero Cloud Face Exposure**: All facial recognition processing is performed locally or ephemerally.
-- **Git Protection**: Strict `.gitignore` rules prevent user face capture photos (`data/faces/*`), facial model data (`lbph_model.yml`, `labels.json`), and database files from ever being committed to GitHub.
 
 ---
 
