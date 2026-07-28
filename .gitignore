@@ -1,8 +1,31 @@
+# Python bytecode & cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Virtual environments
 venv/
 .venv/
-data/db/*.sqlite3
-data/faces/*/
+env/
+ENV/
+
+# User Data & Face Biometrics (STRICT PRIVACY - NEVER COMMIT FACES OR USER DB)
+data/faces/*
 !data/faces/.gitkeep
-.pytest_cache/
+data/db/*
+!data/db/.gitkeep
+*.sqlite3
+labels.json
+lbph_model.yml
+
+# Environment & Secret files
+.env
+.env.local
+*.log
+run_log.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db
