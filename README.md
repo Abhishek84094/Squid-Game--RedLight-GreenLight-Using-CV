@@ -28,21 +28,21 @@ The application is built on a modern decoupled architecture: a **FastAPI Asynchr
 
 ```mermaid
 graph TD
-    A[Webcam Feed] --> B[MediaPipe Pose JS]
-    B --> C[Pose Scorer & Window Filter]
-    C -->|30 FPS Pose Score Stream| D[WebSocket Controller /ws/game]
+    A["Webcam Feed"] --> B["MediaPipe Pose JS"]
+    B --> C["Pose Scorer & Window Filter"]
+    C -->|30 FPS Telemetry| D["WebSocket Controller /ws/game"]
     
-    subgraph Backend Server (FastAPI + Async Python)
-        D --> E[GameState FSM]
-        E --> F[Phase Manager: Green/Red/Countdown]
-        E --> G[Elimination & Progress Evaluator]
-        H[OpenCV LBPH Engine] -->|Face Scan Login| I[Player Auth Service]
+    subgraph Server ["Backend Server (FastAPI + Async Python)"]
+        D --> E["GameState FSM"]
+        E --> F["Phase Manager (Green / Red / Countdown)"]
+        E --> G["Elimination & Progress Evaluator"]
+        H["OpenCV LBPH Engine"] -->|Face Scan Login| I["Player Auth Service"]
     end
     
-    E -->|Broadcast GameState JSON| J[HTML5 Canvas Render Engine]
-    J --> K[Young-hee Doll 180° Head Turn]
-    J --> L[Squid Player Animation]
-    J --> M[Web Audio Sound Engine]
+    E -->|Broadcast GameState JSON| J["HTML5 Canvas Render Engine"]
+    J --> K["Young-hee Doll 180° Head Turn"]
+    J --> L["Squid Player Animation"]
+    J --> M["Web Audio Sound Engine"]
 ```
 
 ### 1. **Frontend Layer (Browser)**
