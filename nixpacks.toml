@@ -1,0 +1,13 @@
+# Nixpacks build configuration for Railway cloud deployment
+[phases.setup]
+nixPkgs = ["python310", "libGL", "glib", "freeglut"]
+
+[phases.install]
+cmds = [
+    "python -m pip install --upgrade pip",
+    "pip install -r requirements.txt",
+    "pip install opencv-python-headless opencv-contrib-python-headless"
+]
+
+[start]
+cmd = "python main.py"
