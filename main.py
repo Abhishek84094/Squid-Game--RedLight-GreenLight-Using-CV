@@ -1,28 +1,12 @@
 """
-Red Light, Green Light - entry point.
-
-Run with:  python main.py
-Requires a webcam. See README.md for full setup instructions.
+Red Light, Green Light — Web Application Entry Point.
+Runs the FastAPI + WebSocket server on port specified by cloud environment (Railway/Render) or 8000 locally.
 """
 
-import sys
-
-from src.app import App
-
-
-def main():
-    app = App()
-    if not app.camera.available:
-        print(f"[warning] {app.camera.last_error}")
-        print("[warning] The game will still launch, but you won't be able to "
-              "register, log in, or play without a working webcam.")
-    try:
-        app.run()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        pass
-
+import os
+import uvicorn
 
 if __name__ == "__main__":
-    sys.exit(main() or 0)
+    port = int(os.environ.get("PORT", 8000))
+    print(f"Starting Red Light Green Light Web Server on 0.0.0.0:{port}...")
+    uvicorn.run("server.main:app", host="0.0.0.0", port=port, log_level="info")
