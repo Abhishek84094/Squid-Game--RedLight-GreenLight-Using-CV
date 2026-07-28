@@ -59,13 +59,13 @@ async def _broadcast(room_code: str, msg: dict):
 
 
 async def _match_loop(room_code: str, match: MultiplayerMatch):
-    latest_scores: dict[str, float] = {}
     last = time.monotonic()
 
     while not match.over:
         now = time.monotonic()
         dt = now - last
         last = now
+        latest_scores = getattr(match, "_latest_scores", {})
         match.update(dt, latest_scores)
 
         state = match.to_dict()
@@ -119,6 +119,10 @@ async def multi_ws(
                 "room_code": code,
                 "game_id": game_id,
             })
+            await _broadcast(code, {"type": "lobby", "players": [
+                {"game_id": gid, "name": p.name, "ready": p.ready}
+                for gid, p in match.players.items()
+            ]})
 
         elif action == "join":
             code = room_code.upper().strip()
@@ -161,7 +165,10 @@ async def multi_ws(
 
             elif msg_type == "start":
                 # Only host can start
-                if game_id == _room_hosts.get(code) and match.all_ready():
+                if game_id == _room_hosts.get(code):
+                    # Auto-ready all players when host clicks start match
+                    for p in match.players.values():
+                        p.ready = True
                     match.start_countdown()
                     loop = asyncio.create_task(_match_loop(code, match))
                     _room_loops[code] = loop

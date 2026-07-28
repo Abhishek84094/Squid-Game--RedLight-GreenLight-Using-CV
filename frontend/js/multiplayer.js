@@ -180,6 +180,29 @@ const Multi = {
       label.style.color = '';
     }
 
+    // Phase change audio & countdown UI
+    if (this._lastPhase !== phase) {
+      this._lastPhase = phase;
+      if (phase === 'GREEN') {
+        Sound.playChant(s.chant_speed || 1.0);
+      } else if (phase === 'RED') {
+        Sound.stopChant();
+        Sound.playDollTurn();
+      } else if (phase === 'COUNTDOWN') {
+        Sound.playBeep(440, 0.2);
+      }
+    }
+
+    // Countdown overlay
+    const cdOverlay = el('multi-countdown-overlay');
+    if (phase === 'COUNTDOWN') {
+      cdOverlay.classList.remove('hidden');
+      const rem = Math.ceil(Math.max(0, s.phase_duration - s.phase_timer));
+      el('multi-countdown-num').textContent = rem > 0 ? rem : 'RUN!';
+    } else {
+      cdOverlay.classList.add('hidden');
+    }
+
     // My progress
     const me = s.players?.[this.myGameId];
     if (me) {
@@ -188,8 +211,12 @@ const Multi = {
       el('multi-hud-score').textContent = me.score + ' pts';
     }
 
-    // Flash
+    // Flash & gunshot on elimination
     if (me && !me.alive) {
+      if (!this._wasEliminated) {
+        this._wasEliminated = true;
+        Sound.playGunshot();
+      }
       el('multi-flash-overlay').classList.remove('hidden');
     }
   },
