@@ -11,15 +11,6 @@ venv/
 env/
 ENV/
 
-# User Data & Face Biometrics (STRICT PRIVACY - NEVER COMMIT FACES OR USER DB)
-data/faces/*
-!data/faces/.gitkeep
-data/db/*
-!data/db/.gitkeep
-*.sqlite3
-labels.json
-lbph_model.yml
-
 # Environment & Secret files
 .env
 .env.local

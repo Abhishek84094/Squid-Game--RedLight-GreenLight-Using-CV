@@ -128,7 +128,6 @@ class FaceAuth:
             return None, None
 
         label, confidence = self.recognizer.predict(face_crop)
-        threshold = config.FACE_RECOGNITION_CONFIDENCE_THRESHOLD
-        if confidence <= threshold:
+        if confidence <= config.FACE_RECOGNITION_CONFIDENCE_THRESHOLD:
             return self.labels.get(label), confidence
         return None, confidence
