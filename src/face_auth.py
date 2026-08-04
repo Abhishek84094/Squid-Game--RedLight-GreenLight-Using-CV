@@ -128,8 +128,7 @@ class FaceAuth:
             return None, None
 
         label, confidence = self.recognizer.predict(face_crop)
-        # Strict threshold (40.0) when only 1 face is trained to prevent false positives for other people
-        threshold = 40.0 if len(self.labels) < 2 else config.FACE_RECOGNITION_CONFIDENCE_THRESHOLD
+        threshold = config.FACE_RECOGNITION_CONFIDENCE_THRESHOLD
         if confidence <= threshold:
             return self.labels.get(label), confidence
         return None, confidence

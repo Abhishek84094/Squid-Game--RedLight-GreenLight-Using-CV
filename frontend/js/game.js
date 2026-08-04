@@ -14,9 +14,6 @@
 
 // ─── Sprite Loader (with cache-busting URLs) ──────────────────────────────────
 const Sprites = {
-  youngheeBack: new Image(),
-  youngheeFront: new Image(),
-  youngheeAngry: new Image(),
   player3DFront: new Image(),
   player3DBack: new Image(),
   dollHead: new Image(),
@@ -29,9 +26,6 @@ const Sprites = {
   init() {
     if (this.loaded) return;
     const v = '?v=' + Date.now();
-    this.youngheeBack.src = '/images/younghee-turn-back-spritesheet.png' + v;
-    this.youngheeFront.src = '/images/younghee-turn-front-spritesheet.png' + v;
-    this.youngheeAngry.src = '/images/younghee-angry-spritesheet.png' + v;
     this.player3DFront.src = '/images/player456_clean.png' + v;
     this.player3DBack.src = '/images/player456_back_clean.png' + v;
     this.dollHead.src = '/images/doll_head.png' + v;

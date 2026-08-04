@@ -194,17 +194,21 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // Mute / unmute sound
-  el('btn-game-mute').onclick = () => {
+  const toggleMute = () => {
     Sound.init();
     Game._muted = !Game._muted;
+    const label = Game._muted ? '🔇 Muted' : '🔊 Sound';
+    if (el('btn-game-mute')) el('btn-game-mute').textContent = label;
+    if (el('btn-multi-game-mute')) el('btn-multi-game-mute').textContent = label;
     if (Game._muted) {
       Sound.stopSong();
-      el('btn-game-mute').textContent = '🔇 Muted';
     } else {
-      el('btn-game-mute').textContent = '🔊 Sound';
       if (Game.state?.phase === 'GREEN_LIGHT') Sound.startSong();
     }
   };
+
+  if (el('btn-game-mute')) el('btn-game-mute').onclick = toggleMute;
+  if (el('btn-multi-game-mute')) el('btn-multi-game-mute').onclick = toggleMute;
 
 
   // ── Multiplayer ───────────────────────────────────────────────────────

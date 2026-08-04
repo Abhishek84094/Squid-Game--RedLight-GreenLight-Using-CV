@@ -42,8 +42,8 @@ CAMERA_HEIGHT = 480
 # ---------------------------------------------------------------------------
 FACE_SAMPLES_PER_ANGLE = 20           # frames captured per angle during registration
 FACE_ANGLES = ["front", "left", "right"]
-FACE_RECOGNITION_CONFIDENCE_THRESHOLD = 75.0  # LBPH distance; LOWER = more confident match
-FACE_DETECT_MIN_SIZE = (120, 120)
+FACE_RECOGNITION_CONFIDENCE_THRESHOLD = 80.0  # LBPH distance; LOWER = more confident match
+FACE_DETECT_MIN_SIZE = (60, 60)
 
 # ---------------------------------------------------------------------------
 # Pose / movement detection

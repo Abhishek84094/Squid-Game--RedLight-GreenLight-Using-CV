@@ -124,8 +124,11 @@ const Multi = {
 
   // ─── Multi Game ─────────────────────────────────────────────────────
   _startGame() {
-    this.myAvatar = new Avatar();
-    this.myAvatar.color = App.player?.avatar_color || '#ff2d82';
+    this.myAvatar = new SquidPlayer('456');
+    this.doll = new YoungheeDoll();
+    this.dt = 0;
+    this._wasEliminated = false;
+    this._lastPhase = null;
 
     showView('view-multi-game');
     this._setupCanvas();
@@ -184,12 +187,12 @@ const Multi = {
     if (this._lastPhase !== phase) {
       this._lastPhase = phase;
       if (phase === 'GREEN') {
-        Sound.playChant(s.chant_speed || 1.0);
+        Sound.startSong(s.chant_speed || 1.0);
       } else if (phase === 'RED') {
-        Sound.stopChant();
-        Sound.playDollTurn();
+        Sound.stopSong();
+        Sound.dollTurnSound();
       } else if (phase === 'COUNTDOWN') {
-        Sound.playBeep(440, 0.2);
+        Sound.beep(440, 0.2);
       }
     }
 
@@ -215,7 +218,7 @@ const Multi = {
     if (me && !me.alive) {
       if (!this._wasEliminated) {
         this._wasEliminated = true;
-        Sound.playGunshot();
+        Sound.gunshot();
       }
       el('multi-flash-overlay').classList.remove('hidden');
     }
@@ -225,7 +228,10 @@ const Multi = {
     const loop = (ts) => {
       const dt = Math.min((ts - this.lastTime) / 1000, 0.1);
       this.lastTime = ts;
+      this.dt = dt;
       if (this.myAvatar) this.myAvatar.update(dt);
+      const phase = this.matchState?.phase || 'WAITING';
+      if (this.doll) this.doll.update(dt, phase === 'RED');
       this._render();
       this.animFrame = requestAnimationFrame(loop);
     };
@@ -249,9 +255,12 @@ const Multi = {
     const groundY = h * 0.72;
     const dollX = w - 100;
 
-    // Doll
-    const facing = phase === 'RED' ? 'front' : 'back';
-    drawDoll(ctx, dollX, groundY - 10, 1.2, facing);
+    // Draw Guards & Younghee Doll
+    drawGuard(ctx, dollX - 45, groundY - 10, 0.9, 'square');
+    drawGuard(ctx, dollX + 45, groundY - 10, 0.9, 'circle');
+    if (this.doll) {
+      this.doll.draw(ctx, dollX, groundY - 10, 1.2);
+    }
 
     // Draw each player lane
     players.forEach((p, i) => {
@@ -259,26 +268,35 @@ const Multi = {
       const avX = 100 + (dollX - 180) * (p.distance / 100);
 
       ctx.font = '11px Outfit';
-      ctx.fillStyle = p.alive ? 'rgba(255,255,255,0.5)' : 'rgba(255,80,80,0.5)';
+      ctx.fillStyle = p.alive ? 'rgba(255,255,255,0.7)' : 'rgba(255,80,80,0.7)';
       ctx.textAlign = 'left';
       ctx.fillText(p.name, 16, laneY - 40);
 
       // Lane line
-      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(80, laneY); ctx.lineTo(dollX - 30, laneY); ctx.stroke();
 
       const isMe = p.game_id === this.myGameId;
-      const av = isMe ? this.myAvatar : new Avatar();
-      av.color = p.avatar_color || '#ff2d82';
+      if (isMe) {
+        const av = this.myAvatar;
+        if (!p.alive) av.setState(ANIM.FALL);
+        else if (p.finished) av.setState(ANIM.VICTORY);
+        else if (phase === 'RED') av.setState(ANIM.FREEZE);
+        else if (phase === 'GREEN' && this._latestScore > 1.5) av.setState(ANIM.RUN);
+        else av.setState(ANIM.IDLE);
 
-      if (!p.alive) av.setState(ANIM.FALL);
-      else if (p.finished) av.setState(ANIM.VICTORY);
-      else if (phase === 'RED') av.setState(ANIM.FREEZE);
-      else if (phase === 'GREEN' && (isMe ? this._latestScore > 1.5 : p.distance > 0)) av.setState(ANIM.RUN);
-      else av.setState(ANIM.IDLE);
+        av.draw(ctx, avX, laneY, count > 2 ? 0.75 : 0.9);
+      } else {
+        const otherAv = new SquidPlayer(p.game_id.slice(-3));
+        if (!p.alive) otherAv.setState(ANIM.FALL);
+        else if (p.finished) otherAv.setState(ANIM.VICTORY);
+        else if (phase === 'RED') otherAv.setState(ANIM.FREEZE);
+        else if (phase === 'GREEN' && p.distance > 0) otherAv.setState(ANIM.RUN);
+        else otherAv.setState(ANIM.IDLE);
 
-      av.draw(ctx, avX, laneY, count > 2 ? 0.75 : 0.9);
+        otherAv.draw(ctx, avX, laneY, count > 2 ? 0.75 : 0.9);
+      }
     });
   },
 

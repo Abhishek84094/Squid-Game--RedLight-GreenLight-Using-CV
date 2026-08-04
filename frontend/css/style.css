@@ -564,13 +564,44 @@ html, body {
 .hud-right-group {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
 }
 
-/* Leave & Mute buttons inside top HUD group */
+/* Leave & Mute buttons inside top HUD group - placed side-by-side without overlap */
 .game-leave-btn, .game-mute-btn {
-  position: static;
+  position: relative;
   z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.game-mute-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--white);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.game-mute-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--white);
+}
+
+.game-leave-btn {
+  background: rgba(230, 45, 55, 0.2);
+  color: #ff6b72;
+  border: 1px solid rgba(230, 45, 55, 0.4);
+}
+.game-leave-btn:hover {
+  background: rgba(230, 45, 55, 0.35);
+  color: #ffffff;
 }
 
 /* ─── RESULT VIEW ───────────────────────────────────────── */
@@ -772,14 +803,6 @@ html, body {
   to   { box-shadow: 0 8px 56px rgba(230,45,55,0.9); }
 }
 
-/* ─── Mute button ─────────────────────────────────────────────── */
-.game-mute-btn {
-  position: absolute;
-  bottom: 20px;
-  right: 20px;
-  z-index: 20;
-  font-size: 1.2rem;
-}
 
 @media (max-width: 600px) {
   .panel-card { padding: 28px 22px; }
