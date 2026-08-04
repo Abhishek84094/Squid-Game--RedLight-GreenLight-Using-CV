@@ -82,11 +82,8 @@ async def _match_loop(room_code: str, match: MultiplayerMatch):
     final["type"] = "match_over"
     await _broadcast(room_code, final)
 
-    # Cleanup
-    _rooms.pop(room_code, None)
-    _room_sockets.pop(room_code, None)
+    # Cleanup loop task only — keep room and sockets intact so players can replay in the same room
     _room_loops.pop(room_code, None)
-    _room_hosts.pop(room_code, None)
 
 
 @router.websocket("/ws/multi/{session_id}")
@@ -98,8 +95,10 @@ async def multi_ws(
 ):
     player = sess.get_player(session_id)
     if not player:
-        await websocket.close(code=4001, reason="Invalid session")
-        return
+        # Fallback for guest sessions
+        from src import database
+        db = database.Database()
+        player = db.create_player("Guest Player")
 
     await websocket.accept()
     game_id = player["game_id"]
@@ -132,9 +131,7 @@ async def multi_ws(
                 await websocket.close()
                 return
             if match.over:
-                await websocket.send_json({"type": "error", "reason": "match_already_over"})
-                await websocket.close()
-                return
+                match.reset()
             match.add_player(game_id, name, avatar_color)
             _room_sockets[code][game_id] = websocket
             await websocket.send_json({
@@ -166,6 +163,8 @@ async def multi_ws(
             elif msg_type == "start":
                 # Only host can start
                 if game_id == _room_hosts.get(code):
+                    if match.over:
+                        match.reset()
                     # Auto-ready all players when host clicks start match
                     for p in match.players.values():
                         p.ready = True

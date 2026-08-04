@@ -316,8 +316,14 @@ const Multi = {
     el('res-time').textContent = '—';
     el('res-freeze').textContent = (me?.longest_freeze_sec || 0).toFixed(1) + 's';
 
-    el('btn-play-again').onclick = () => showView('view-menu');
-    el('btn-result-menu').onclick = () => showView('view-menu');
+    el('btn-play-again').onclick = () => {
+      showView('view-multi');
+      this._showLobby();
+    };
+    el('btn-result-menu').onclick = () => {
+      this.leave();
+      showView('view-menu');
+    };
     showView('view-result');
   },
 

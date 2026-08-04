@@ -57,6 +57,26 @@ class MultiplayerMatch:
         self.winner_game_id: str | None = None
         self.over = False
 
+    def reset(self):
+        self.phase = LightPhase.WAITING
+        self.phase_timer = 0.0
+        self.phase_duration = 0.0
+        self.elapsed_sec = 0.0
+        self.time_since_light_change = 0.0
+        self.winner_game_id = None
+        self.over = False
+        for p in self.players.values():
+            p.ready = False
+            p.alive = True
+            p.finished = False
+            p.distance = 0.0
+            p.score = 0
+            p.elimination_reason = None
+            p.finish_time_sec = None
+            p.longest_freeze_sec = 0.0
+            p._freeze_clock = 0.0
+            p._over_threshold_frames = 0
+
     # -- roster ---------------------------------------------------------
     def add_player(self, game_id: str, name: str, avatar_color: str):
         if game_id not in self.players:
