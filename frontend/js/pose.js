@@ -39,9 +39,10 @@ class MovementScorer {
     // 23, 24: Hips
     // 25, 26: Knees
     // 27, 28: Ankles
-    const ARM_INDICES = [13, 14, 15, 16];
-    const LEG_INDICES = [25, 26, 27, 28];
-    const TORSO_INDICES = [11, 12, 23, 24];
+    // Body landmark groups (face landmarks 0-10 are EXCLUDED)
+    const ARM_INDICES = [13, 14, 15, 16];       // elbows + wrists
+    const LEG_INDICES = [25, 26, 27, 28];       // knees + ankles
+    const TORSO_INDICES = [11, 12, 23, 24];     // shoulders + hips
 
     const getDisp = (indices) => {
       let sum = 0, count = 0;
@@ -62,27 +63,33 @@ class MovementScorer {
     const legDisp = getDisp(LEG_INDICES);
     const torsoDisp = getDisp(TORSO_INDICES);
 
-    // STRICT FULL-BODY RUNNING REQUIREMENT:
-    // Arms AND legs/torso MUST move together in coordination.
-    // Single-part movement (moving just 1 hand, head tilt, etc.) IS REJECTED.
-    const activeArms = armDisp >= 2.0;
-    const activeLegs = legDisp >= 2.0;
-    const activeTorso = torsoDisp >= 1.5;
+    // ── STRICT FULL-BODY RUNNING DETECTION ──────────────────────────────
+    // In the real Squid Game, players physically RUN. So we require:
+    //   1. LEGS MUST be moving (jogging/marching in place) — this is MANDATORY
+    //   2. At least ONE other group (arms swinging or torso bobbing) must also move
+    // Single-limb shakes (waving a hand, nodding head, fidgeting) are REJECTED.
+    const LEGS_THRESHOLD = 3.0;   // legs must clear this to count as jogging
+    const ARMS_THRESHOLD = 2.5;   // arms must clear this to count as swinging
+    const TORSO_THRESHOLD = 2.0;  // torso must clear this to count as bobbing
 
-    const activeCount = [activeArms, activeLegs, activeTorso].filter(Boolean).length;
+    const legsActive = legDisp >= LEGS_THRESHOLD;
+    const armsActive = armDisp >= ARMS_THRESHOLD;
+    const torsoActive = torsoDisp >= TORSO_THRESHOLD;
 
     let instantaneous = 0;
-    // Require AT LEAST 2 body component groups moving together (full body running/marching)
-    if (activeCount >= 2) {
-      instantaneous = (armDisp * 0.45) + (legDisp * 0.55) + (torsoDisp * 0.6);
+
+    // LEGS MUST be active — no legs movement = no character movement, period.
+    // Plus at least one other body group must also be moving (full-body coordination).
+    if (legsActive && (armsActive || torsoActive)) {
+      instantaneous = (armDisp * 0.35) + (legDisp * 0.45) + (torsoDisp * 0.2);
     }
 
     this._prev = landmarks;
 
-    // CRITICAL: INSTANT ZERO-LAG STOPPING
-    // As soon as physical body movement drops below threshold, reset smoothing window
-    // so score drops to 0.0 immediately without any trailing moving average!
-    if (instantaneous < 1.0) {
+    // ── INSTANT ZERO-LAG STOPPING ───────────────────────────────────────
+    // The moment physical movement drops below threshold, wipe the smoothing
+    // window so the score snaps to 0.0 with zero trailing lag.
+    if (instantaneous < 1.5) {
       this._window = [0];
       return 0;
     }
