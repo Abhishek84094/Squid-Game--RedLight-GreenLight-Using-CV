@@ -124,7 +124,8 @@ const Multi = {
 
   // ─── Multi Game ─────────────────────────────────────────────────────
   _startGame() {
-    this.myAvatar = new SquidPlayer('456');
+    this._playerAvatars = {};
+    this.myAvatar = new SquidPlayer((this.myGameId || '456').replace(/\D/g, '').slice(-3) || '456');
     this.doll = new YoungheeDoll();
     this.dt = 0;
     this._wasEliminated = false;
@@ -162,7 +163,7 @@ const Multi = {
     // Timer
     const tl = Math.max(0, s.phase_duration - s.phase_timer);
     const elapsed = s.elapsed_sec || 0;
-    const timeLeft = Math.max(0, 90 - elapsed);
+    const timeLeft = Math.max(0, 120 - elapsed);
     const mins = Math.floor(timeLeft / 60);
     const secs = Math.floor(timeLeft % 60);
     el('multi-hud-timer').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -192,7 +193,7 @@ const Multi = {
         Sound.stopSong();
         Sound.dollTurnSound();
       } else if (phase === 'COUNTDOWN') {
-        Sound.beep(440, 0.2);
+        Sound.beep(false);
       }
     }
 
@@ -209,7 +210,7 @@ const Multi = {
     // My progress
     const me = s.players?.[this.myGameId];
     if (me) {
-      const pct = Math.round((me.distance / 100) * 100);
+      const pct = Math.min(100, Math.round(((me.distance || 0) / 200.0) * 100));
       el('multi-progress-bar').style.width = pct + '%';
       el('multi-hud-score').textContent = me.score + ' pts';
     }
@@ -245,57 +246,135 @@ const Multi = {
     const h = this.canvas.height;
     const s = this.matchState;
     const phase = s?.phase || 'WAITING';
+    const groundY = h * 0.58;
+    const grassW = w * 0.11;
+    const dollX = w * 0.82;
+    const dollScale = Math.max(0.9, h / 700);
 
+    // Background
     drawBackground(ctx, w, h, phase === 'GREEN' ? 'GREEN_LIGHT' : phase === 'RED' ? 'RED_LIGHT' : 'WAITING');
+
+    // Tree (behind doll)
+    ctx.fillStyle = '#5a3818';
+    ctx.fillRect(dollX - 16, h * 0.08, 32, groundY - h * 0.08);
+    [[dollX, h * 0.08, 65], [dollX - 18, h * 0.04, 48], [dollX + 12, h * 0.01, 40]].forEach(([x, y, r]) => {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, '#4a9035'); g.addColorStop(1, '#2a6020');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // Draw Guards & Younghee Doll
+    drawGuard(ctx, dollX - 125, groundY, 1.0, 'square');
+    drawGuard(ctx, dollX + 125, groundY, 1.0, 'circle');
+    if (this.doll) {
+      this.doll.draw(ctx, dollX, groundY, dollScale);
+    }
+
+    // Finish line (red stripe)
+    const finishX = dollX - 80;
+    ctx.strokeStyle = '#e62d37';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(finishX, groundY - 110 * dollScale); ctx.lineTo(finishX, h); ctx.stroke();
+    ctx.save();
+    ctx.translate(finishX - 12, groundY - 120 * dollScale);
+    ctx.rotate(-Math.PI / 2);
+    ctx.font = 'bold 13px Outfit';
+    ctx.fillStyle = '#e62d37';
+    ctx.textAlign = 'center';
+    ctx.fillText('FINISH', 0, 0);
+    ctx.restore();
 
     if (!s?.players) return;
 
-    const players = Object.values(s.players);
-    const count = players.length;
-    const groundY = h * 0.72;
-    const dollX = w - 100;
+    const playerEntries = Object.entries(s.players);
+    const count = playerEntries.length;
+    this._playerAvatars = this._playerAvatars || {};
 
-    // Draw Guards & Younghee Doll
-    drawGuard(ctx, dollX - 45, groundY - 10, 0.9, 'square');
-    drawGuard(ctx, dollX + 45, groundY - 10, 0.9, 'circle');
-    if (this.doll) {
-      this.doll.draw(ctx, dollX, groundY - 10, 1.2);
-    }
+    const startX = grassW + 20;
+    const endX = finishX - 12;
 
-    // Draw each player lane
-    players.forEach((p, i) => {
-      const laneY = groundY + (i - (count - 1) / 2) * 60;
-      const avX = 100 + (dollX - 180) * (p.distance / 100);
+    // Draw each player lane & character avatar
+    playerEntries.forEach(([gid, p], i) => {
+      const gameId = p.game_id || gid;
+      const isMe = (gameId === this.myGameId);
 
-      ctx.font = '11px Outfit';
-      ctx.fillStyle = p.alive ? 'rgba(255,255,255,0.7)' : 'rgba(255,80,80,0.7)';
-      ctx.textAlign = 'left';
-      ctx.fillText(p.name, 16, laneY - 40);
+      // Spaced lanes across the courtyard
+      const minY = groundY + 35;
+      const maxY = h - 45;
+      const laneY = count <= 1 
+        ? (groundY + (h - groundY) * 0.5)
+        : (minY + i * ((maxY - minY) / (count - 1)));
+
+      // Horizontal progress across field (0.0 to 1.0)
+      const progress = Math.min(1.0, Math.max(0.0, (p.distance || 0) / 200.0));
+      const playerX = startX + (endX - startX) * progress;
+      const pScale = Math.max(0.7, (count > 2 ? 0.85 : 1.0) - progress * 0.2);
 
       // Lane line
-      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(80, laneY); ctx.lineTo(dollX - 30, laneY); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.moveTo(startX - 10, laneY);
+      ctx.lineTo(finishX, laneY);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-      const isMe = p.game_id === this.myGameId;
-      if (isMe) {
-        const av = this.myAvatar;
-        if (!p.alive) av.setState(ANIM.FALL);
-        else if (p.finished) av.setState(ANIM.VICTORY);
-        else if (phase === 'RED') av.setState(ANIM.FREEZE);
-        else if (phase === 'GREEN' && this._latestScore > 1.5) av.setState(ANIM.RUN);
-        else av.setState(ANIM.IDLE);
+      // Get or create avatar instance
+      if (!this._playerAvatars[gameId]) {
+        const numStr = (gameId || 'P456').replace(/\D/g, '').slice(-3) || '456';
+        this._playerAvatars[gameId] = new SquidPlayer(numStr);
+      }
+      const av = this._playerAvatars[gameId];
+      av.update(this.dt || 0.016);
 
-        av.draw(ctx, avX, laneY, count > 2 ? 0.75 : 0.9);
+      // Set animation state
+      if (!p.alive) {
+        av.setState(ANIM.FALL);
+      } else if (p.finished) {
+        av.setState(ANIM.VICTORY);
+      } else if (phase === 'RED') {
+        av.setState(ANIM.FREEZE);
+      } else if (phase === 'GREEN') {
+        const isMoving = isMe ? (this._latestScore > 1.5) : ((p.distance || 0) > 0);
+        av.setState(isMoving ? ANIM.RUN : ANIM.IDLE);
       } else {
-        const otherAv = new SquidPlayer(p.game_id.slice(-3));
-        if (!p.alive) otherAv.setState(ANIM.FALL);
-        else if (p.finished) otherAv.setState(ANIM.VICTORY);
-        else if (phase === 'RED') otherAv.setState(ANIM.FREEZE);
-        else if (phase === 'GREEN' && p.distance > 0) otherAv.setState(ANIM.RUN);
-        else otherAv.setState(ANIM.IDLE);
+        av.setState(ANIM.IDLE);
+      }
 
-        otherAv.draw(ctx, avX, laneY, count > 2 ? 0.75 : 0.9);
+      // Draw character avatar!
+      av.draw(ctx, playerX, laneY, pScale);
+
+      // Draw Name tag pill above avatar
+      ctx.save();
+      ctx.font = 'bold 12px Outfit, sans-serif';
+      ctx.textAlign = 'center';
+
+      const labelText = p.name + (isMe ? ' (YOU)' : '');
+      const textMetrics = ctx.measureText(labelText);
+      const pillW = textMetrics.width + 16;
+      const pillH = 20;
+      const pillX = playerX - pillW / 2;
+      const pillY = laneY - 78 * pScale;
+
+      ctx.fillStyle = isMe ? 'rgba(255, 45, 130, 0.85)' : (p.alive ? 'rgba(0, 0, 0, 0.65)' : 'rgba(200, 30, 30, 0.85)');
+      ctx.beginPath();
+      ctx.roundRect(pillX, pillY, pillW, pillH, 10);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(labelText, playerX, pillY + 14);
+      ctx.restore();
+
+      // Elimination X crosshair
+      if (!p.alive) {
+        const r = 24 * pScale;
+        ctx.strokeStyle = '#e62d37';
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(playerX - r, laneY - 75 * pScale); ctx.lineTo(playerX + r, laneY - 5 * pScale); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(playerX + r, laneY - 75 * pScale); ctx.lineTo(playerX - r, laneY - 5 * pScale); ctx.stroke();
       }
     });
   },
@@ -312,7 +391,7 @@ const Multi = {
     el('result-title').textContent = isWinner ? 'YOU WIN!' : me?.finished ? 'FINISHED' : 'ELIMINATED';
     el('result-title').className = 'result-title ' + (isWinner ? 'victory' : 'eliminated');
     el('result-score').textContent = (me?.score || 0) + ' pts';
-    el('res-distance').textContent = (me?.distance || 0).toFixed(1) + ' / 100';
+    el('res-distance').textContent = (me?.distance || 0).toFixed(1) + ' / 200.0';
     el('res-time').textContent = '—';
     el('res-freeze').textContent = (me?.longest_freeze_sec || 0).toFixed(1) + 's';
 

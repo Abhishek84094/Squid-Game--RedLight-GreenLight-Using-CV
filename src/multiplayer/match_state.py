@@ -219,6 +219,7 @@ class MultiplayerMatch:
             "winner_game_id": self.winner_game_id,
             "players": {
                 gid: {
+                    "game_id": p.game_id,
                     "name": p.name,
                     "avatar_color": p.avatar_color,
                     "alive": p.alive,
