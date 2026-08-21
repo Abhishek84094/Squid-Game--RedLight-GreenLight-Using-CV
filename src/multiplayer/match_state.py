@@ -226,7 +226,7 @@ class MultiplayerMatch:
             "distance_to_win": config.DISTANCE_TO_WIN,
             "players": {
                 gid: {
-                    "game_id": gid,
+                    "game_id": p.game_id,
                     "name": p.name,
                     "avatar_color": p.avatar_color,
                     "alive": p.alive,

@@ -13,7 +13,7 @@ const Multi = {
   isHost: false,
   myGameId: '',
   matchState: null,
-  avatars: {},
+  _playerAvatars: {},
   _latestScore: 0,
   _wasEliminated: false,
   _lastPhase: null,
@@ -127,10 +127,11 @@ const Multi = {
 
   // ─── Multi Game ─────────────────────────────────────────────────────
   _startGame() {
-    this.avatars = {};
+    this._playerAvatars = {};
     const myNum = (App.player?.game_id || this.myGameId || 'P-456').replace(/\D/g, '').slice(-3).padStart(3, '0') || '456';
-    this.avatars[this.myGameId] = new SquidPlayer(myNum);
+    this._playerAvatars[this.myGameId] = new SquidPlayer(myNum);
     this.doll = new YoungheeDoll();
+    this.dt = 0;
     this._latestScore = 0;
     this._wasEliminated = false;
     this._lastPhase = null;
@@ -221,9 +222,9 @@ const Multi = {
     const me = s.players?.[this.myGameId];
     if (me) {
       const distanceToWin = s.distance_to_win || 200.0;
-      const pct = Math.min(100, Math.round((me.distance / distanceToWin) * 100));
+      const pct = Math.min(100, Math.round(((me.distance || 0) / distanceToWin) * 100));
       el('multi-progress-bar').style.width = pct + '%';
-      el('multi-hud-score').textContent = me.score + ' pts';
+      el('multi-hud-score').textContent = (me.score || 0) + ' pts';
     }
 
     // Flash & gunshot on elimination
@@ -240,10 +241,13 @@ const Multi = {
     const loop = (ts) => {
       const dt = Math.min((ts - this.lastTime) / 1000, 0.05);
       this.lastTime = ts;
+      this.dt = dt;
 
-      // Update all player avatar animations
-      for (const av of Object.values(this.avatars)) {
-        if (av && av.update) av.update(dt);
+      // Update all persistent player avatars
+      if (this._playerAvatars) {
+        for (const av of Object.values(this._playerAvatars)) {
+          if (av && av.update) av.update(dt);
+        }
       }
 
       // Update doll
@@ -285,7 +289,7 @@ const Multi = {
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
     });
 
-    // Guards standing right next to doll
+    // Guards standing next to doll
     drawGuard(ctx, dollX - 125, groundY, 1.0, 'square');
     drawGuard(ctx, dollX + 125, groundY, 1.0, 'circle');
 
@@ -309,48 +313,51 @@ const Multi = {
 
     if (!s?.players) return;
 
-    const entries = Object.entries(s.players);
-    const count = entries.length;
+    const playerEntries = Object.entries(s.players);
+    const count = playerEntries.length;
+    this._playerAvatars = this._playerAvatars || {};
+
     const startX = grassW + 20;
     const endX = finishX - 12;
     const distanceToWin = s.distance_to_win || 200.0;
-    const laneSpacing = Math.min(80, Math.max(50, (h * 0.32) / Math.max(1, count)));
 
-    // Draw each player's lane and avatar
-    entries.forEach(([gid, p], i) => {
-      const isMe = (gid === this.myGameId) || (p.game_id === this.myGameId);
-      const laneY = groundY + (i - (count - 1) / 2) * laneSpacing;
+    // Draw each player lane & character avatar
+    playerEntries.forEach(([gid, p], i) => {
+      const gameId = p.game_id || gid;
+      const isMe = (gameId === this.myGameId);
 
-      // Ensure avatar instance exists in map
-      if (!this.avatars[gid]) {
-        const num = (gid || '000').replace(/\D/g, '').slice(-3).padStart(3, '0') || '456';
-        this.avatars[gid] = new SquidPlayer(num);
-      }
-      const av = this.avatars[gid];
+      // Spaced lanes across courtyard
+      const minY = groundY + 35;
+      const maxY = h - 45;
+      const laneY = count <= 1
+        ? (groundY + (h - groundY) * 0.5)
+        : (minY + i * ((maxY - minY) / (count - 1)));
 
-      // Progress calculation
-      const progress = Math.min(1, Math.max(0, (p.distance || 0) / distanceToWin));
-      const avX = startX + (endX - startX) * progress;
+      // Horizontal progress across field (0.0 to 1.0)
+      const progress = Math.min(1.0, Math.max(0.0, (p.distance || 0) / distanceToWin));
+      const playerX = startX + (endX - startX) * progress;
+      const pScale = Math.max(0.7, (count > 2 ? 0.85 : 1.0) - progress * 0.2);
 
       // Lane line
-      ctx.strokeStyle = isMe ? 'rgba(35,220,130,0.3)' : 'rgba(255,255,255,0.08)';
+      ctx.strokeStyle = isMe ? 'rgba(35, 220, 130, 0.3)' : 'rgba(255, 255, 255, 0.1)';
       ctx.lineWidth = isMe ? 2 : 1;
-      ctx.setLineDash([6, 6]);
+      ctx.setLineDash([8, 6]);
       ctx.beginPath();
-      ctx.moveTo(startX - 10, laneY + 22);
-      ctx.lineTo(finishX, laneY + 22);
+      ctx.moveTo(startX - 10, laneY);
+      ctx.lineTo(finishX, laneY);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Player name and ID tag
-      ctx.font = isMe ? 'bold 12px Outfit' : '11px Outfit';
-      ctx.fillStyle = !p.alive ? 'rgba(230,45,55,0.9)' : isMe ? 'rgba(35,220,130,0.95)' : 'rgba(255,255,255,0.75)';
-      ctx.textAlign = 'left';
-      const tag = !p.alive ? '💀 ELIMINATED' : p.finished ? '🏆 FINISHED' : isMe ? '⭐ YOU' : '';
-      ctx.fillText(`${p.name} #${av.number} ${tag}`, startX - 8, laneY - 45);
+      // Get or create persistent avatar instance
+      if (!this._playerAvatars[gameId]) {
+        const numStr = (gameId || 'P456').replace(/\D/g, '').slice(-3) || '456';
+        this._playerAvatars[gameId] = new SquidPlayer(numStr);
+      }
+      const av = this._playerAvatars[gameId];
 
-      // State determination:
-      // Local player uses tracked _latestScore; other players use server-reported is_moving!
+      // Set animation state:
+      // YOUR avatar responds directly to your pose score.
+      // OTHER avatars respond ONLY to server-validated is_moving state!
       if (!p.alive) {
         av.setState(ANIM.FALL);
       } else if (p.finished) {
@@ -358,27 +365,46 @@ const Multi = {
       } else if (phase === 'RED') {
         av.setState(ANIM.FREEZE);
       } else if (phase === 'GREEN') {
-        if (isMe) {
-          av.setState(this._latestScore > 2.0 ? ANIM.RUN : ANIM.IDLE);
-        } else {
-          av.setState(p.is_moving ? ANIM.RUN : ANIM.IDLE);
-        }
+        const isMoving = isMe ? (this._latestScore > 2.0) : Boolean(p.is_moving);
+        av.setState(isMoving ? ANIM.RUN : ANIM.IDLE);
       } else {
         av.setState(ANIM.IDLE);
       }
 
-      // Draw Avatar
-      const pScale = (1.15 - progress * 0.3) * (count > 2 ? 0.8 : 0.95);
-      av.draw(ctx, avX, laneY, pScale);
+      // Draw character avatar
+      av.draw(ctx, playerX, laneY, pScale);
+
+      // Draw Name tag pill above avatar
+      ctx.save();
+      ctx.font = 'bold 12px Outfit, sans-serif';
+      ctx.textAlign = 'center';
+
+      const labelText = p.name + (isMe ? ' (YOU)' : '');
+      const textMetrics = ctx.measureText(labelText);
+      const pillW = textMetrics.width + 16;
+      const pillH = 20;
+      const pillX = playerX - pillW / 2;
+      const pillY = laneY - 78 * pScale;
+
+      ctx.fillStyle = isMe
+        ? 'rgba(255, 45, 130, 0.85)'
+        : (!p.alive ? 'rgba(200, 30, 30, 0.85)' : 'rgba(0, 0, 0, 0.65)');
+      ctx.beginPath();
+      ctx.roundRect(pillX, pillY, pillW, pillH, 10);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(labelText, playerX, pillY + 14);
+      ctx.restore();
 
       // Elimination X crosshair
       if (!p.alive) {
-        const r = 26 * pScale;
+        const r = 24 * pScale;
         ctx.strokeStyle = '#e62d37';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 4;
         ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(avX - r, laneY - 80 * pScale); ctx.lineTo(avX + r, laneY - 5 * pScale); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(avX + r, laneY - 80 * pScale); ctx.lineTo(avX - r, laneY - 5 * pScale); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(playerX - r, laneY - 75 * pScale); ctx.lineTo(playerX + r, laneY - 5 * pScale); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(playerX + r, laneY - 75 * pScale); ctx.lineTo(playerX - r, laneY - 5 * pScale); ctx.stroke();
       }
     });
 
@@ -439,7 +465,7 @@ const Multi = {
 
     const winner = s.winner_game_id;
     const me = s.players?.[this.myGameId];
-    const isWinner = winner && winner === this.myGameId;
+    const isWinner = winner && (winner === this.myGameId);
 
     if (isWinner) {
       setTimeout(() => Sound.victory(), 200);
@@ -449,7 +475,7 @@ const Multi = {
 
     el('result-icon').textContent = isWinner ? '🏆' : me?.finished ? '✅' : '💀';
     el('result-title').textContent = isWinner ? 'YOU WIN!' : me?.finished ? 'FINISHED' : 'ELIMINATED';
-    el('result-title').className = 'result-title ' + (isWinner ? 'victory' : me?.finished ? '' : 'eliminated');
+    el('result-title').className = 'result-title ' + (isWinner ? 'victory' : 'eliminated');
     el('result-score').textContent = (me?.score || 0) + ' pts';
     el('res-distance').textContent = (me?.distance || 0).toFixed(1) + ' / ' + (s.distance_to_win || 200.0).toFixed(1);
     el('res-time').textContent = '—';
@@ -471,7 +497,7 @@ const Multi = {
     if (this.ws) { this.ws.close(); this.ws = null; }
     if (this.pose) { this.pose.stop(); this.pose = null; }
     if (this.animFrame) { cancelAnimationFrame(this.animFrame); this.animFrame = null; }
-    this.avatars = {};
+    this._playerAvatars = {};
     this.matchState = null;
     el('multi-choose').classList.remove('hidden');
     el('multi-lobby').classList.add('hidden');

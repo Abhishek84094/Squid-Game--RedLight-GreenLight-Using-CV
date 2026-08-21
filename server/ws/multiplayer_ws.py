@@ -65,7 +65,14 @@ async def _match_loop(room_code: str, match: MultiplayerMatch):
         now = time.monotonic()
         dt = now - last
         last = now
-        latest_scores = getattr(match, "_latest_scores", {})
+
+        # Read latest scores for each player
+        latest_scores = dict(getattr(match, "_latest_scores", {}))
+        # Clear or reset latest scores so player movement requires continuous stream
+        if hasattr(match, "_latest_scores"):
+            for gid in list(match._latest_scores.keys()):
+                match._latest_scores[gid] = 0.0
+
         match.update(dt, latest_scores)
 
         state = match.to_dict()
@@ -177,11 +184,10 @@ async def multi_ws(
                 score = float(data.get("score", 0.0))
                 # Store score for match loop to use
                 if code in _rooms:
-                    # latest_scores is local to _match_loop; inject via player state proxy
-                    # We use a dict attached to match as a side channel
-                    if not hasattr(match, "_latest_scores"):
-                        match._latest_scores = {}
-                    match._latest_scores[game_id] = score
+                    room_match = _rooms[code]
+                    if not hasattr(room_match, "_latest_scores"):
+                        room_match._latest_scores = {}
+                    room_match._latest_scores[game_id] = score
 
     except WebSocketDisconnect:
         # Mark disconnected player as eliminated
