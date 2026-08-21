@@ -8,6 +8,8 @@ Flow:
   Both:   send {"type": "ready"} → host sends {"type": "start"} to begin
           send {"type": "movement", "score": <float>} during play
           receive {"type": "match_state", ...} every tick
+          receive {"type": "player_eliminated", "name": ...} when any player is eliminated
+          receive {"type": "match_over", "rankings": [...]} when match concludes
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ from collections import defaultdict
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from src.multiplayer.match_state import MultiplayerMatch
+from src import database, config
 from server import session as sess
 
 router = APIRouter()
@@ -33,6 +36,15 @@ _room_loops: dict[str, asyncio.Task] = {}
 _room_hosts: dict[str, str] = {}
 
 TICK_RATE = 20
+
+# Distinct Squid Game palette for up to 5 players
+AVATAR_COLORS = [
+    "#ff2d82",  # Player 1 (Pink)
+    "#23dc82",  # Player 2 (Green)
+    "#3b82f6",  # Player 3 (Cyan/Blue)
+    "#f59e0b",  # Player 4 (Gold/Amber)
+    "#a855f7",  # Player 5 (Purple)
+]
 
 
 def _gen_room_code() -> str:
@@ -68,12 +80,22 @@ async def _match_loop(room_code: str, match: MultiplayerMatch):
 
         # Read latest scores for each player
         latest_scores = dict(getattr(match, "_latest_scores", {}))
-        # Clear or reset latest scores so player movement requires continuous stream
+        # Clear scores so movement requires continuous streaming
         if hasattr(match, "_latest_scores"):
             for gid in list(match._latest_scores.keys()):
                 match._latest_scores[gid] = 0.0
 
         match.update(dt, latest_scores)
+
+        # Broadcast elimination announcements for any newly eliminated players
+        while match.new_eliminations:
+            elim_player = match.new_eliminations.pop(0)
+            await _broadcast(room_code, {
+                "type": "player_eliminated",
+                "game_id": elim_player.game_id,
+                "name": elim_player.name,
+                "reason": elim_player.elimination_reason or "Eliminated",
+            })
 
         state = match.to_dict()
         state["type"] = "match_state"
@@ -84,12 +106,40 @@ async def _match_loop(room_code: str, match: MultiplayerMatch):
 
         await asyncio.sleep(1 / TICK_RATE)
 
-    # Final state
+    # ── Match Over: Record stats in database for ALL players ───────────────
+    try:
+        db = database.Database()
+        for p in match.players.values():
+            db_player = db.get_player_by_game_id(p.game_id)
+            if db_player:
+                if p.game_id == match.winner_game_id:
+                    outcome = "victory"
+                elif not p.alive:
+                    outcome = "eliminated"
+                elif p.finished:
+                    outcome = "victory"
+                else:
+                    outcome = "timeout"
+
+                db.record_match(
+                    player_id=db_player["id"],
+                    mode="multiplayer",
+                    result=outcome,
+                    distance=p.distance,
+                    time_taken_sec=p.finish_time_sec or match.elapsed_sec,
+                    score=p.score,
+                    freeze_duration_sec=p.longest_freeze_sec,
+                )
+        db.close()
+    except Exception as e:
+        print(f"Error recording multiplayer match stats: {e}")
+
+    # Final state with complete rankings
     final = match.to_dict()
     final["type"] = "match_over"
     await _broadcast(room_code, final)
 
-    # Cleanup loop task only — keep room and sockets intact so players can replay in the same room
+    # Cleanup loop task only — keep room and sockets intact so players can replay
     _room_loops.pop(room_code, None)
 
 
@@ -103,14 +153,13 @@ async def multi_ws(
     player = sess.get_player(session_id)
     if not player:
         # Fallback for guest sessions
-        from src import database
         db = database.Database()
         player = db.create_player("Guest Player")
+        db.close()
 
     await websocket.accept()
     game_id = player["game_id"]
     name = player["name"]
-    avatar_color = player.get("avatar_color", "#ff2d82")
 
     try:
         if action == "create":
@@ -118,6 +167,7 @@ async def multi_ws(
             match = MultiplayerMatch()
             _rooms[code] = match
             _room_hosts[code] = game_id
+            avatar_color = AVATAR_COLORS[0]
             match.add_player(game_id, name, avatar_color)
             _room_sockets[code][game_id] = websocket
             await websocket.send_json({
@@ -126,7 +176,7 @@ async def multi_ws(
                 "game_id": game_id,
             })
             await _broadcast(code, {"type": "lobby", "players": [
-                {"game_id": gid, "name": p.name, "ready": p.ready}
+                {"game_id": gid, "name": p.name, "ready": p.ready, "color": p.avatar_color}
                 for gid, p in match.players.items()
             ]})
 
@@ -134,13 +184,24 @@ async def multi_ws(
             code = room_code.upper().strip()
             match = _rooms.get(code)
             if match is None:
-                await websocket.send_json({"type": "error", "reason": "room_not_found"})
+                await websocket.send_json({"type": "error", "reason": "Room not found"})
                 await websocket.close()
                 return
+
             if match.over:
                 match.reset()
+
+            # Enforce 5-player cap
+            if game_id not in match.players and not match.can_add_player():
+                await websocket.send_json({"type": "error", "reason": "Room is full (max 5 players)"})
+                await websocket.close()
+                return
+
+            player_index = len(match.players) % len(AVATAR_COLORS)
+            avatar_color = AVATAR_COLORS[player_index]
             match.add_player(game_id, name, avatar_color)
             _room_sockets[code][game_id] = websocket
+
             await websocket.send_json({
                 "type": "joined",
                 "room_code": code,
@@ -148,7 +209,7 @@ async def multi_ws(
             })
             # Notify everyone about the new player roster
             await _broadcast(code, {"type": "lobby", "players": [
-                {"game_id": gid, "name": p.name, "ready": p.ready}
+                {"game_id": gid, "name": p.name, "ready": p.ready, "color": p.avatar_color}
                 for gid, p in match.players.items()
             ]})
         else:
@@ -161,11 +222,12 @@ async def multi_ws(
             msg_type = data.get("type")
 
             if msg_type == "ready":
-                match.players[game_id].ready = True
-                await _broadcast(code, {"type": "lobby", "players": [
-                    {"game_id": gid, "name": p.name, "ready": p.ready}
-                    for gid, p in match.players.items()
-                ]})
+                if game_id in match.players:
+                    match.players[game_id].ready = True
+                    await _broadcast(code, {"type": "lobby", "players": [
+                        {"game_id": gid, "name": p.name, "ready": p.ready, "color": p.avatar_color}
+                        for gid, p in match.players.items()
+                    ]})
 
             elif msg_type == "start":
                 # Only host can start

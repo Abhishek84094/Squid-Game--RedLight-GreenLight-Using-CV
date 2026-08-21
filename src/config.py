@@ -69,6 +69,7 @@ MULTI_FACE_CHECK_ENABLED = True
 # ---------------------------------------------------------------------------
 # Match rules
 # ---------------------------------------------------------------------------
+MULTIPLAYER_MAX_PLAYERS = 5            # maximum concurrent players per room
 DISTANCE_TO_WIN = 200.0                # progress units from start line to doll (longer race!)
 MATCH_TIME_LIMIT_SEC = 120             # 2 minutes to complete
 GREEN_LIGHT_MIN_SEC, GREEN_LIGHT_MAX_SEC = 2.5, 5.0

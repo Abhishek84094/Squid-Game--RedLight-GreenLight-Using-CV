@@ -804,6 +804,139 @@ html, body {
 }
 
 
+/* ─── ELIMINATION ANNOUNCEMENT BANNER ─────────────────────── */
+.elimination-banner-container {
+  position: absolute;
+  top: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 50;
+  pointer-events: none;
+  width: 90%;
+  max-width: 520px;
+}
+
+.elimination-banner {
+  background: rgba(20, 8, 12, 0.92);
+  border: 1.5px solid #e62d37;
+  border-radius: 12px;
+  padding: 12px 24px;
+  color: #ffffff;
+  font-family: var(--font);
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(230, 45, 55, 0.45), 0 0 15px rgba(230, 45, 55, 0.3);
+  animation: elim-slide-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), elim-fade-out 0.5s ease 3.5s forwards;
+}
+
+.elim-icon {
+  font-size: 1.5rem;
+  filter: drop-shadow(0 0 6px #e62d37);
+}
+
+.elim-name {
+  color: #ff6b72;
+  text-shadow: 0 0 10px rgba(255, 45, 130, 0.6);
+}
+
+@keyframes elim-slide-in {
+  from { transform: translateY(-30px) scale(0.85); opacity: 0; }
+  to   { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes elim-fade-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: translateY(-20px) scale(0.9); }
+}
+
+/* ─── MULTIPLAYER RANKINGS TABLE ───────────────────────────── */
+.result-card.panel-wide {
+  max-width: 680px;
+}
+
+.multi-rankings-wrap {
+  width: 100%;
+  margin: 20px 0 28px 0;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.multi-rankings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.multi-rankings-table th, .multi-rankings-table td {
+  padding: 10px 14px;
+  text-align: left;
+}
+
+.multi-rankings-table th {
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--grey);
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+
+.multi-rankings-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.multi-rankings-table tr.is-me {
+  background: rgba(255, 45, 130, 0.12);
+}
+
+.multi-rankings-table tr.is-me td {
+  font-weight: 700;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.status-badge.winner {
+  background: rgba(255, 200, 60, 0.2);
+  color: var(--gold);
+  border: 1px solid rgba(255, 200, 60, 0.4);
+}
+
+.status-badge.finished {
+  background: rgba(35, 220, 130, 0.2);
+  color: var(--green);
+  border: 1px solid rgba(35, 220, 130, 0.4);
+}
+
+.status-badge.eliminated {
+  background: rgba(230, 45, 55, 0.2);
+  color: #ff6b72;
+  border: 1px solid rgba(230, 45, 55, 0.4);
+}
+
+.status-badge.alive {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
 @media (max-width: 600px) {
   .panel-card { padding: 28px 22px; }
   .menu-grid { grid-template-columns: 1fr; max-width: 360px; }

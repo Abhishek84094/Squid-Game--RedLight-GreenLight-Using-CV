@@ -2,9 +2,9 @@
 Server-authoritative multiplayer match rules.
 
 Same red-light/green-light rules as the single-player src/game_state.py,
-generalized to N players sharing one light cycle. Deliberately has zero
-socket/threading imports so it's unit-testable on its own (see
-tests/test_multiplayer_match.py) - src/multiplayer/server.py is the only
+generalized to N players (up to 5 concurrent) sharing one light cycle.
+Deliberately has zero socket/threading imports so it's unit-testable on its own
+(see tests/test_multiplayer_match.py) - server/ws/multiplayer_ws.py is the only
 place that wires it up to real networking.
 
 Every player sends up their own movement_score each tick (computed
@@ -58,6 +58,8 @@ class MultiplayerMatch:
         self.winner_game_id: str | None = None
         self.over = False
         self._latest_scores: dict[str, float] = {}
+        self.new_eliminations: list[PlayerState] = []
+        self.rankings: list[dict] = []
 
     def reset(self):
         self.phase = LightPhase.WAITING
@@ -68,6 +70,8 @@ class MultiplayerMatch:
         self.winner_game_id = None
         self.over = False
         self._latest_scores.clear()
+        self.new_eliminations.clear()
+        self.rankings.clear()
         for p in self.players.values():
             p.ready = False
             p.alive = True
@@ -82,9 +86,16 @@ class MultiplayerMatch:
             p._over_threshold_frames = 0
 
     # -- roster ---------------------------------------------------------
-    def add_player(self, game_id: str, name: str, avatar_color: str):
-        if game_id not in self.players:
-            self.players[game_id] = PlayerState(game_id=game_id, name=name, avatar_color=avatar_color)
+    def can_add_player(self) -> bool:
+        return len(self.players) < config.MULTIPLAYER_MAX_PLAYERS
+
+    def add_player(self, game_id: str, name: str, avatar_color: str) -> bool:
+        if game_id in self.players:
+            return True
+        if len(self.players) >= config.MULTIPLAYER_MAX_PLAYERS:
+            return False
+        self.players[game_id] = PlayerState(game_id=game_id, name=name, avatar_color=avatar_color)
+        return True
 
     def remove_player(self, game_id: str):
         self.players.pop(game_id, None)
@@ -96,6 +107,7 @@ class MultiplayerMatch:
         if p and p.alive and not p.finished:
             p.alive = False
             p.elimination_reason = "Disconnected"
+            self.new_eliminations.append(p)
 
     def all_ready(self) -> bool:
         return len(self.players) > 0 and all(p.ready for p in self.players.values())
@@ -105,6 +117,8 @@ class MultiplayerMatch:
         self.phase = LightPhase.COUNTDOWN
         self.phase_timer = 0.0
         self.phase_duration = config.COUNTDOWN_SEC
+        self.new_eliminations.clear()
+        self.rankings.clear()
 
     def _enter_green(self):
         self.phase = LightPhase.GREEN
@@ -154,13 +168,20 @@ class MultiplayerMatch:
             elif self.phase == LightPhase.RED:
                 self._tick_red_player(p, dt, score)
 
-        active = [p for p in self.players.values() if p.alive and not p.finished]
-        if not active:
+        # Check if anyone finished
+        finishers = [p for p in self.players.values() if p.finished]
+        if finishers:
             self._end_match()
             return
+
+        active = [p for p in self.players.values() if p.alive and not p.finished]
+        if not active:
+            # Everyone eliminated
+            self._end_match()
+            return
+
         if len(self.players) > 1 and len(active) == 1:
-            # Everyone else has already finished or been eliminated - the
-            # lone remaining player wins by survival, same as the show.
+            # Lone remaining player wins by survival
             self._end_match()
             return
 
@@ -190,6 +211,7 @@ class MultiplayerMatch:
         if p._over_threshold_frames >= config.RED_LIGHT_CONSECUTIVE_FRAMES:
             p.alive = False
             p.elimination_reason = "Moved during Red Light"
+            self.new_eliminations.append(p)
 
     def _end_match(self):
         self.phase = LightPhase.FINISHED
@@ -197,22 +219,52 @@ class MultiplayerMatch:
         for p in self.players.values():
             p.score = int(p.distance * 10)
 
+        # 1. Determine Winner
         finishers = sorted(
-            (p for p in self.players.values() if p.finished),
-            key=lambda p: p.finish_time_sec,
+            [p for p in self.players.values() if p.finished],
+            key=lambda p: (p.finish_time_sec or 9999.0, -p.distance),
         )
         if finishers:
             self.winner_game_id = finishers[0].game_id
-            return
-
-        survivors = [p for p in self.players.values() if p.alive]
-        if len(survivors) == 1:
-            self.winner_game_id = survivors[0].game_id
-        elif len(survivors) > 1:
-            survivors.sort(key=lambda p: -p.distance)
-            self.winner_game_id = survivors[0].game_id
         else:
-            self.winner_game_id = None  # everyone eliminated, nobody wins
+            survivors = [p for p in self.players.values() if p.alive]
+            if survivors:
+                survivors.sort(key=lambda p: (-p.distance, -p.longest_freeze_sec))
+                self.winner_game_id = survivors[0].game_id
+            else:
+                self.winner_game_id = None  # everyone eliminated
+
+        # 2. Build complete rankings list
+        # Order: Finishers (by finish time) -> Survivors (by distance) -> Eliminated (by distance, then freeze)
+        finishers = sorted(
+            [p for p in self.players.values() if p.finished],
+            key=lambda p: (p.finish_time_sec or 9999.0, -p.distance),
+        )
+        survivors = sorted(
+            [p for p in self.players.values() if p.alive and not p.finished],
+            key=lambda p: (-p.distance, -p.longest_freeze_sec),
+        )
+        eliminated = sorted(
+            [p for p in self.players.values() if not p.alive],
+            key=lambda p: (-p.distance, -p.longest_freeze_sec),
+        )
+
+        all_ordered = finishers + survivors + eliminated
+        self.rankings = []
+        for idx, p in enumerate(all_ordered, start=1):
+            status = "Winner" if p.game_id == self.winner_game_id else ("Finished" if p.finished else ("Alive" if p.alive else "Eliminated"))
+            self.rankings.append({
+                "rank": idx,
+                "game_id": p.game_id,
+                "name": p.name,
+                "avatar_color": p.avatar_color,
+                "distance": round(p.distance, 2),
+                "score": p.score,
+                "status": status,
+                "time_taken_sec": round(p.finish_time_sec or self.elapsed_sec, 1),
+                "longest_freeze_sec": round(p.longest_freeze_sec, 1),
+                "elimination_reason": p.elimination_reason,
+            })
 
     # -- serialization for the network ------------------------------------
     def to_dict(self) -> dict:
@@ -224,6 +276,7 @@ class MultiplayerMatch:
             "over": self.over,
             "winner_game_id": self.winner_game_id,
             "distance_to_win": config.DISTANCE_TO_WIN,
+            "rankings": self.rankings,
             "players": {
                 gid: {
                     "game_id": p.game_id,

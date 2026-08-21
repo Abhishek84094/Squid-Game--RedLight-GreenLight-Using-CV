@@ -201,11 +201,11 @@
      RESULT VIEW
 ════════════════════════════════════════════════════════════════ -->
 <div id="view-result" class="view">
-  <div class="result-card">
+  <div class="result-card" id="result-card-box">
     <div class="result-icon" id="result-icon">🎉</div>
     <h2 class="result-title" id="result-title">VICTORY</h2>
     <div class="result-score" id="result-score">0 pts</div>
-    <div class="result-stats">
+    <div class="result-stats" id="single-result-stats">
       <div class="result-stat">
         <span class="stat-label">Distance</span>
         <span class="stat-val" id="res-distance">—</span>
@@ -218,6 +218,21 @@
         <span class="stat-label">Longest Freeze</span>
         <span class="stat-val" id="res-freeze">—</span>
       </div>
+    </div>
+    <!-- Multiplayer Match Standings Table -->
+    <div class="multi-rankings-wrap hidden" id="multi-rankings-wrap">
+      <table class="multi-rankings-table">
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Player</th>
+            <th>Status</th>
+            <th>Distance</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+        <tbody id="multi-rankings-tbody"></tbody>
+      </table>
     </div>
     <div class="result-buttons">
       <button class="btn btn-primary" id="btn-play-again">Play Again</button>
@@ -232,7 +247,7 @@
 <div id="view-multi" class="view">
   <div class="panel-card">
     <button class="btn-back" id="btn-back-multi">← Back</button>
-    <h2>Multiplayer</h2>
+    <h2>Multiplayer (Up to 5 Players)</h2>
 
     <div id="multi-choose">
       <div class="multi-options">
@@ -290,6 +305,8 @@
       <div class="countdown-num" id="multi-countdown-num">3</div>
     </div>
     <div class="flash-overlay hidden" id="multi-flash-overlay"></div>
+    <!-- In-Game Elimination Announcements Banner Container -->
+    <div class="elimination-banner-container" id="multi-elim-container"></div>
   </div>
 </div>
 
@@ -323,12 +340,12 @@
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 
 <!-- App scripts (with cache-busting version query) -->
-<script src="/static/js/sound.js?v=11.0"></script>
-<script src="/static/js/pose.js?v=11.0"></script>
-<script src="/static/js/auth.js?v=11.0"></script>
-<script src="/static/js/game.js?v=11.0"></script>
-<script src="/static/js/multiplayer.js?v=11.0"></script>
-<script src="/static/js/app.js?v=11.0"></script>
+<script src="/static/js/sound.js?v=12.0"></script>
+<script src="/static/js/pose.js?v=12.0"></script>
+<script src="/static/js/auth.js?v=12.0"></script>
+<script src="/static/js/game.js?v=12.0"></script>
+<script src="/static/js/multiplayer.js?v=12.0"></script>
+<script src="/static/js/app.js?v=12.0"></script>
 
 </body>
 </html>

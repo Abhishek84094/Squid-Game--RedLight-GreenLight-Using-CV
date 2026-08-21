@@ -1,6 +1,9 @@
 /**
- * multiplayer.js — Multiplayer lobby + game via WebSocket
+ * multiplayer.js — Multiplayer lobby + 5-player game via WebSocket
  */
+
+// Distinct Squid Game player numbers for up to 5 players
+const SQUID_NUMBERS = ['456', '218', '067', '001', '199'];
 
 const Multi = {
   ws: null,
@@ -77,6 +80,10 @@ const Multi = {
         this._updateMultiHUD(msg);
         break;
 
+      case 'player_eliminated':
+        this._onPlayerEliminated(msg);
+        break;
+
       case 'match_over':
         this.matchState = msg;
         this._showMultiResult(msg);
@@ -87,7 +94,7 @@ const Multi = {
         break;
 
       case 'error':
-        showToast('Error: ' + msg.reason);
+        showToast('Error: ' + (msg.reason || 'Unknown error'));
         break;
     }
   },
@@ -104,17 +111,18 @@ const Multi = {
   _updateLobbyUI(players) {
     const container = el('lobby-players');
     container.innerHTML = '';
-    for (const p of players) {
+    players.forEach((p, idx) => {
       const isMe = p.game_id === this.myGameId;
+      const numTag = SQUID_NUMBERS[idx % SQUID_NUMBERS.length];
       const row = document.createElement('div');
       row.className = 'lobby-player-row';
       row.innerHTML = `
-        <div class="lobby-player-dot ${p.ready ? 'ready' : ''}"></div>
-        <div class="lobby-player-name">${p.name}${isMe ? ' (you)' : ''}</div>
+        <div class="lobby-player-dot ${p.ready ? 'ready' : ''}" style="${p.color ? 'background:' + p.color : ''}"></div>
+        <div class="lobby-player-name">#${numTag} ${p.name}${isMe ? ' (you)' : ''}</div>
         <div class="lobby-player-status">${p.ready ? '✅ Ready' : 'Waiting…'}</div>
       `;
       container.appendChild(row);
-    }
+    });
   },
 
   sendReady() {
@@ -135,6 +143,10 @@ const Multi = {
     this._latestScore = 0;
     this._wasEliminated = false;
     this._lastPhase = null;
+
+    // Clear any previous elimination announcements
+    const bannerContainer = el('multi-elim-container');
+    if (bannerContainer) bannerContainer.innerHTML = '';
 
     showView('view-multi-game');
     this._setupCanvas();
@@ -165,13 +177,30 @@ const Multi = {
     this.pose.start();
   },
 
+  _onPlayerEliminated(msg) {
+    // Play gunshot sound cue for all players in room
+    Sound.gunshot();
+
+    // Create on-screen elimination announcement banner
+    const container = el('multi-elim-container');
+    if (container) {
+      const banner = document.createElement('div');
+      banner.className = 'elimination-banner';
+      banner.innerHTML = `
+        <span class="elim-icon">💀</span>
+        <span><strong class="elim-name">${msg.name || 'A player'}</strong> got eliminated!</span>
+      `;
+      container.appendChild(banner);
+      setTimeout(() => banner.remove(), 4200);
+    }
+  },
+
   _updateMultiHUD(s) {
     const phase = s.phase;
 
     // Timer
-    const tl = Math.max(0, s.phase_duration - s.phase_timer);
     const elapsed = s.elapsed_sec || 0;
-    const timeLeft = Math.max(0, 90 - elapsed);
+    const timeLeft = Math.max(0, 120 - elapsed);
     const mins = Math.floor(timeLeft / 60);
     const secs = Math.floor(timeLeft % 60);
     el('multi-hud-timer').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -227,11 +256,10 @@ const Multi = {
       el('multi-hud-score').textContent = (me.score || 0) + ' pts';
     }
 
-    // Flash & gunshot on elimination
+    // Flash on elimination
     if (me && !me.alive) {
       if (!this._wasEliminated) {
         this._wasEliminated = true;
-        Sound.gunshot();
       }
       el('multi-flash-overlay').classList.remove('hidden');
     }
@@ -270,7 +298,7 @@ const Multi = {
     const s = this.matchState;
     const phase = s?.phase || 'WAITING';
 
-    const groundY = h * 0.58;
+    const groundY = h * 0.56;
     const grassW = w * 0.11;
     const dollX = w * 0.82;
     const finishX = dollX - 80;
@@ -321,14 +349,14 @@ const Multi = {
     const endX = finishX - 12;
     const distanceToWin = s.distance_to_win || 200.0;
 
-    // Draw each player lane & character avatar
+    // Up to 5 dynamically distributed lanes across courtyard
+    const minY = groundY + 30;
+    const maxY = h - 45;
+
     playerEntries.forEach(([gid, p], i) => {
       const gameId = p.game_id || gid;
       const isMe = (gameId === this.myGameId);
 
-      // Spaced lanes across courtyard
-      const minY = groundY + 35;
-      const maxY = h - 45;
       const laneY = count <= 1
         ? (groundY + (h - groundY) * 0.5)
         : (minY + i * ((maxY - minY) / (count - 1)));
@@ -336,10 +364,10 @@ const Multi = {
       // Horizontal progress across field (0.0 to 1.0)
       const progress = Math.min(1.0, Math.max(0.0, (p.distance || 0) / distanceToWin));
       const playerX = startX + (endX - startX) * progress;
-      const pScale = Math.max(0.7, (count > 2 ? 0.85 : 1.0) - progress * 0.2);
+      const pScale = Math.max(0.68, (count > 3 ? 0.78 : (count > 2 ? 0.88 : 1.0)) - progress * 0.18);
 
       // Lane line
-      ctx.strokeStyle = isMe ? 'rgba(35, 220, 130, 0.3)' : 'rgba(255, 255, 255, 0.1)';
+      ctx.strokeStyle = isMe ? 'rgba(35, 220, 130, 0.35)' : 'rgba(255, 255, 255, 0.1)';
       ctx.lineWidth = isMe ? 2 : 1;
       ctx.setLineDash([8, 6]);
       ctx.beginPath();
@@ -348,16 +376,16 @@ const Multi = {
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Get or create persistent avatar instance
+      // Get or create persistent avatar instance with unique Squid Game number
       if (!this._playerAvatars[gameId]) {
-        const numStr = (gameId || 'P456').replace(/\D/g, '').slice(-3) || '456';
-        this._playerAvatars[gameId] = new SquidPlayer(numStr);
+        const assignedNum = SQUID_NUMBERS[i % SQUID_NUMBERS.length] || '456';
+        this._playerAvatars[gameId] = new SquidPlayer(assignedNum);
       }
       const av = this._playerAvatars[gameId];
 
       // Set animation state:
-      // YOUR avatar responds directly to your pose score.
-      // OTHER avatars respond ONLY to server-validated is_moving state!
+      // Local player responds to local camera pose score;
+      // Other players respond ONLY to server-validated is_moving state!
       if (!p.alive) {
         av.setState(ANIM.FALL);
       } else if (p.finished) {
@@ -376,35 +404,36 @@ const Multi = {
 
       // Draw Name tag pill above avatar
       ctx.save();
-      ctx.font = 'bold 12px Outfit, sans-serif';
+      ctx.font = 'bold 11px Outfit, sans-serif';
       ctx.textAlign = 'center';
 
-      const labelText = p.name + (isMe ? ' (YOU)' : '');
+      const tagText = !p.alive ? ' 💀 OUT' : (p.finished ? ' 🏆' : (isMe ? ' (YOU)' : ''));
+      const labelText = `#${av.number} ${p.name}${tagText}`;
       const textMetrics = ctx.measureText(labelText);
       const pillW = textMetrics.width + 16;
-      const pillH = 20;
+      const pillH = 18;
       const pillX = playerX - pillW / 2;
-      const pillY = laneY - 78 * pScale;
+      const pillY = laneY - 74 * pScale;
 
       ctx.fillStyle = isMe
-        ? 'rgba(255, 45, 130, 0.85)'
-        : (!p.alive ? 'rgba(200, 30, 30, 0.85)' : 'rgba(0, 0, 0, 0.65)');
+        ? 'rgba(255, 45, 130, 0.9)'
+        : (!p.alive ? 'rgba(200, 30, 30, 0.9)' : (p.finished ? 'rgba(35, 220, 130, 0.9)' : 'rgba(15, 16, 20, 0.75)'));
       ctx.beginPath();
-      ctx.roundRect(pillX, pillY, pillW, pillH, 10);
+      ctx.roundRect(pillX, pillY, pillW, pillH, 9);
       ctx.fill();
 
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(labelText, playerX, pillY + 14);
+      ctx.fillText(labelText, playerX, pillY + 13);
       ctx.restore();
 
-      // Elimination X crosshair
+      // Elimination X crosshair on eliminated avatars
       if (!p.alive) {
-        const r = 24 * pScale;
+        const r = 22 * pScale;
         ctx.strokeStyle = '#e62d37';
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 3.5;
         ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(playerX - r, laneY - 75 * pScale); ctx.lineTo(playerX + r, laneY - 5 * pScale); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(playerX + r, laneY - 75 * pScale); ctx.lineTo(playerX - r, laneY - 5 * pScale); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(playerX - r, laneY - 72 * pScale); ctx.lineTo(playerX + r, laneY - 4 * pScale); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(playerX + r, laneY - 72 * pScale); ctx.lineTo(playerX - r, laneY - 4 * pScale); ctx.stroke();
       }
     });
 
@@ -473,13 +502,37 @@ const Multi = {
       setTimeout(() => Sound.gunshot(), 100);
     }
 
-    el('result-icon').textContent = isWinner ? '🏆' : me?.finished ? '✅' : '💀';
-    el('result-title').textContent = isWinner ? 'YOU WIN!' : me?.finished ? 'FINISHED' : 'ELIMINATED';
-    el('result-title').className = 'result-title ' + (isWinner ? 'victory' : 'eliminated');
+    el('result-card-box').classList.add('panel-wide');
+    el('single-result-stats').classList.add('hidden');
+    el('multi-rankings-wrap').classList.remove('hidden');
+
+    el('result-icon').textContent = isWinner ? '🏆' : (me?.finished ? '✅' : '💀');
+    el('result-title').textContent = isWinner ? 'YOU WIN!' : (me?.finished ? 'FINISHED' : 'ELIMINATED');
+    el('result-title').className = 'result-title ' + (isWinner ? 'victory' : (me?.finished ? '' : 'eliminated'));
     el('result-score').textContent = (me?.score || 0) + ' pts';
-    el('res-distance').textContent = (me?.distance || 0).toFixed(1) + ' / ' + (s.distance_to_win || 200.0).toFixed(1);
-    el('res-time').textContent = '—';
-    el('res-freeze').textContent = (me?.longest_freeze_sec || 0).toFixed(1) + 's';
+
+    // Populate full multiplayer match rankings
+    const tbody = el('multi-rankings-tbody');
+    tbody.innerHTML = '';
+    const rankings = s.rankings || [];
+
+    rankings.forEach((r) => {
+      const isMe = r.game_id === this.myGameId;
+      const statusClass = r.status.toLowerCase();
+      const tr = document.createElement('tr');
+      if (isMe) tr.className = 'is-me';
+
+      const rankBadge = r.rank === 1 ? '🥇 1' : (r.rank === 2 ? '🥈 2' : (r.rank === 3 ? '🥉 3' : r.rank));
+
+      tr.innerHTML = `
+        <td><strong>${rankBadge}</strong></td>
+        <td>${r.name}${isMe ? ' <strong>(YOU)</strong>' : ''}</td>
+        <td><span class="status-badge ${statusClass}">${r.status}</span></td>
+        <td>${(r.distance || 0).toFixed(1)}m</td>
+        <td>${r.score || 0}</td>
+      `;
+      tbody.appendChild(tr);
+    });
 
     el('btn-play-again').onclick = () => {
       showView('view-multi');
@@ -499,6 +552,9 @@ const Multi = {
     if (this.animFrame) { cancelAnimationFrame(this.animFrame); this.animFrame = null; }
     this._playerAvatars = {};
     this.matchState = null;
+    el('result-card-box').classList.remove('panel-wide');
+    el('single-result-stats').classList.remove('hidden');
+    el('multi-rankings-wrap').classList.add('hidden');
     el('multi-choose').classList.remove('hidden');
     el('multi-lobby').classList.add('hidden');
     showView('view-menu');
