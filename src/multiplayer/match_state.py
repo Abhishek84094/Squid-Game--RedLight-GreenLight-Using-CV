@@ -39,6 +39,7 @@ class PlayerState:
     finished: bool = False
     distance: float = 0.0
     score: int = 0
+    is_moving: bool = False
     elimination_reason: str | None = None
     finish_time_sec: float | None = None
     longest_freeze_sec: float = 0.0
@@ -56,6 +57,7 @@ class MultiplayerMatch:
         self.players: dict[str, PlayerState] = {}
         self.winner_game_id: str | None = None
         self.over = False
+        self._latest_scores: dict[str, float] = {}
 
     def reset(self):
         self.phase = LightPhase.WAITING
@@ -65,12 +67,14 @@ class MultiplayerMatch:
         self.time_since_light_change = 0.0
         self.winner_game_id = None
         self.over = False
+        self._latest_scores.clear()
         for p in self.players.values():
             p.ready = False
             p.alive = True
             p.finished = False
             p.distance = 0.0
             p.score = 0
+            p.is_moving = False
             p.elimination_reason = None
             p.finish_time_sec = None
             p.longest_freeze_sec = 0.0
@@ -166,7 +170,8 @@ class MultiplayerMatch:
             self._enter_green()
 
     def _tick_green_player(self, p: PlayerState, dt: float, score: float):
-        if score >= config.GREEN_LIGHT_MIN_SCORE_TO_MOVE:
+        p.is_moving = score >= config.GREEN_LIGHT_MIN_SCORE_TO_MOVE
+        if p.is_moving:
             p.distance += score * config.MOVEMENT_TO_DISTANCE_SCALE * dt
         if p.distance >= config.DISTANCE_TO_WIN:
             p.distance = config.DISTANCE_TO_WIN
@@ -174,6 +179,7 @@ class MultiplayerMatch:
             p.finish_time_sec = self.elapsed_sec
 
     def _tick_red_player(self, p: PlayerState, dt: float, score: float):
+        p.is_moving = score > config.RED_LIGHT_MOVEMENT_THRESHOLD
         p._freeze_clock += dt
         p.longest_freeze_sec = max(p.longest_freeze_sec, p._freeze_clock)
         in_grace = self.time_since_light_change <= config.RED_LIGHT_GRACE_PERIOD_SEC
@@ -217,14 +223,17 @@ class MultiplayerMatch:
             "elapsed_sec": round(self.elapsed_sec, 2),
             "over": self.over,
             "winner_game_id": self.winner_game_id,
+            "distance_to_win": config.DISTANCE_TO_WIN,
             "players": {
                 gid: {
+                    "game_id": gid,
                     "name": p.name,
                     "avatar_color": p.avatar_color,
                     "alive": p.alive,
                     "finished": p.finished,
                     "distance": round(p.distance, 2),
                     "score": p.score,
+                    "is_moving": p.is_moving,
                     "elimination_reason": p.elimination_reason,
                     "longest_freeze_sec": round(p.longest_freeze_sec, 1),
                 }

@@ -35,7 +35,7 @@ def test_first_to_finish_wins():
     m.add_player("P2", "Bob", "#00ff00")
     m.phase = LightPhase.GREEN
     m.phase_duration = 1000.0
-    for _ in range(200):
+    for _ in range(300):
         m.update(0.1, {"P1": 20.0, "P2": 3.0})
         if m.over:
             break

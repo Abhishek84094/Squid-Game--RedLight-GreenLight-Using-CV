@@ -186,7 +186,10 @@ async def multi_ws(
     except WebSocketDisconnect:
         # Mark disconnected player as eliminated
         if code in _rooms:
-            _rooms[code].mark_disconnected(game_id)
+            room_match = _rooms[code]
+            room_match.mark_disconnected(game_id)
+            if hasattr(room_match, "_latest_scores"):
+                room_match._latest_scores.pop(game_id, None)
             _room_sockets[code].pop(game_id, None)
             await _broadcast(code, {
                 "type": "player_disconnected",

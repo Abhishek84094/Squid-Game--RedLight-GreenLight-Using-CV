@@ -13,8 +13,10 @@ const Multi = {
   isHost: false,
   myGameId: '',
   matchState: null,
-  myAvatar: null,
+  avatars: {},
   _latestScore: 0,
+  _wasEliminated: false,
+  _lastPhase: null,
 
   // ─── Lobby ──────────────────────────────────────────────────────────
   async createRoom() {
@@ -103,11 +105,12 @@ const Multi = {
     const container = el('lobby-players');
     container.innerHTML = '';
     for (const p of players) {
+      const isMe = p.game_id === this.myGameId;
       const row = document.createElement('div');
       row.className = 'lobby-player-row';
       row.innerHTML = `
         <div class="lobby-player-dot ${p.ready ? 'ready' : ''}"></div>
-        <div class="lobby-player-name">${p.name}${p.game_id === this.myGameId ? ' (you)' : ''}</div>
+        <div class="lobby-player-name">${p.name}${isMe ? ' (you)' : ''}</div>
         <div class="lobby-player-status">${p.ready ? '✅ Ready' : 'Waiting…'}</div>
       `;
       container.appendChild(row);
@@ -124,9 +127,11 @@ const Multi = {
 
   // ─── Multi Game ─────────────────────────────────────────────────────
   _startGame() {
-    this.myAvatar = new SquidPlayer('456');
+    this.avatars = {};
+    const myNum = (App.player?.game_id || this.myGameId || 'P-456').replace(/\D/g, '').slice(-3).padStart(3, '0') || '456';
+    this.avatars[this.myGameId] = new SquidPlayer(myNum);
     this.doll = new YoungheeDoll();
-    this.dt = 0;
+    this._latestScore = 0;
     this._wasEliminated = false;
     this._lastPhase = null;
 
@@ -139,7 +144,10 @@ const Multi = {
   _setupCanvas() {
     this.canvas = el('multi-game-canvas');
     this.ctx = this.canvas.getContext('2d');
-    const resize = () => { this.canvas.width = window.innerWidth; this.canvas.height = window.innerHeight; };
+    const resize = () => {
+      this.canvas.width = window.innerWidth;
+      this.canvas.height = window.innerHeight;
+    };
     resize();
     window.addEventListener('resize', resize);
   },
@@ -172,14 +180,17 @@ const Multi = {
     dot.className = 'light-dot';
     if (phase === 'GREEN') {
       dot.classList.add('green');
-      label.textContent = 'GREEN LIGHT';
+      label.textContent = '🟢 GREEN LIGHT';
       label.style.color = 'var(--green)';
     } else if (phase === 'RED') {
       dot.classList.add('red');
-      label.textContent = 'RED LIGHT';
+      label.textContent = '🔴 RED LIGHT';
       label.style.color = 'var(--red)';
     } else if (phase === 'COUNTDOWN') {
       label.textContent = 'GET READY';
+      label.style.color = '';
+    } else {
+      label.textContent = phase;
       label.style.color = '';
     }
 
@@ -192,7 +203,7 @@ const Multi = {
         Sound.stopSong();
         Sound.dollTurnSound();
       } else if (phase === 'COUNTDOWN') {
-        Sound.beep(440, 0.2);
+        Sound.beep(false);
       }
     }
 
@@ -209,7 +220,8 @@ const Multi = {
     // My progress
     const me = s.players?.[this.myGameId];
     if (me) {
-      const pct = Math.round((me.distance / 100) * 100);
+      const distanceToWin = s.distance_to_win || 200.0;
+      const pct = Math.min(100, Math.round((me.distance / distanceToWin) * 100));
       el('multi-progress-bar').style.width = pct + '%';
       el('multi-hud-score').textContent = me.score + ' pts';
     }
@@ -226,12 +238,20 @@ const Multi = {
 
   _startRenderLoop() {
     const loop = (ts) => {
-      const dt = Math.min((ts - this.lastTime) / 1000, 0.1);
+      const dt = Math.min((ts - this.lastTime) / 1000, 0.05);
       this.lastTime = ts;
-      this.dt = dt;
-      if (this.myAvatar) this.myAvatar.update(dt);
+
+      // Update all player avatar animations
+      for (const av of Object.values(this.avatars)) {
+        if (av && av.update) av.update(dt);
+      }
+
+      // Update doll
       const phase = this.matchState?.phase || 'WAITING';
-      if (this.doll) this.doll.update(dt, phase === 'RED');
+      const isRed = phase === 'RED' || (this.matchState?.players?.[this.myGameId] && !this.matchState.players[this.myGameId].alive);
+      const isAngry = this.matchState?.players?.[this.myGameId] && !this.matchState.players[this.myGameId].alive;
+      if (this.doll) this.doll.update(dt, isRed, isAngry);
+
       this._render();
       this.animFrame = requestAnimationFrame(loop);
     };
@@ -246,73 +266,192 @@ const Multi = {
     const s = this.matchState;
     const phase = s?.phase || 'WAITING';
 
+    const groundY = h * 0.58;
+    const grassW = w * 0.11;
+    const dollX = w * 0.82;
+    const finishX = dollX - 80;
+    const dollScale = Math.max(0.9, h / 700);
+
+    // Background
     drawBackground(ctx, w, h, phase === 'GREEN' ? 'GREEN_LIGHT' : phase === 'RED' ? 'RED_LIGHT' : 'WAITING');
+
+    // Tree (behind doll)
+    ctx.fillStyle = '#5a3818';
+    ctx.fillRect(dollX - 16, h * 0.08, 32, groundY - h * 0.08);
+    [[dollX, h * 0.08, 65], [dollX - 18, h * 0.04, 48], [dollX + 12, h * 0.01, 40]].forEach(([x, y, r]) => {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, '#4a9035'); g.addColorStop(1, '#2a6020');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // Guards standing right next to doll
+    drawGuard(ctx, dollX - 125, groundY, 1.0, 'square');
+    drawGuard(ctx, dollX + 125, groundY, 1.0, 'circle');
+
+    // Giant Young-hee Doll
+    if (this.doll) {
+      this.doll.draw(ctx, dollX, groundY, dollScale);
+    }
+
+    // Finish line (red stripe)
+    ctx.strokeStyle = '#e62d37';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(finishX, groundY - 110 * dollScale); ctx.lineTo(finishX, h); ctx.stroke();
+    ctx.save();
+    ctx.translate(finishX - 12, groundY - 120 * dollScale);
+    ctx.rotate(-Math.PI / 2);
+    ctx.font = 'bold 13px Outfit';
+    ctx.fillStyle = '#e62d37';
+    ctx.textAlign = 'center';
+    ctx.fillText('FINISH', 0, 0);
+    ctx.restore();
 
     if (!s?.players) return;
 
-    const players = Object.values(s.players);
-    const count = players.length;
-    const groundY = h * 0.72;
-    const dollX = w - 100;
+    const entries = Object.entries(s.players);
+    const count = entries.length;
+    const startX = grassW + 20;
+    const endX = finishX - 12;
+    const distanceToWin = s.distance_to_win || 200.0;
+    const laneSpacing = Math.min(80, Math.max(50, (h * 0.32) / Math.max(1, count)));
 
-    // Draw Guards & Younghee Doll
-    drawGuard(ctx, dollX - 45, groundY - 10, 0.9, 'square');
-    drawGuard(ctx, dollX + 45, groundY - 10, 0.9, 'circle');
-    if (this.doll) {
-      this.doll.draw(ctx, dollX, groundY - 10, 1.2);
-    }
+    // Draw each player's lane and avatar
+    entries.forEach(([gid, p], i) => {
+      const isMe = (gid === this.myGameId) || (p.game_id === this.myGameId);
+      const laneY = groundY + (i - (count - 1) / 2) * laneSpacing;
 
-    // Draw each player lane
-    players.forEach((p, i) => {
-      const laneY = groundY + (i - (count - 1) / 2) * 60;
-      const avX = 100 + (dollX - 180) * (p.distance / 100);
+      // Ensure avatar instance exists in map
+      if (!this.avatars[gid]) {
+        const num = (gid || '000').replace(/\D/g, '').slice(-3).padStart(3, '0') || '456';
+        this.avatars[gid] = new SquidPlayer(num);
+      }
+      const av = this.avatars[gid];
 
-      ctx.font = '11px Outfit';
-      ctx.fillStyle = p.alive ? 'rgba(255,255,255,0.7)' : 'rgba(255,80,80,0.7)';
-      ctx.textAlign = 'left';
-      ctx.fillText(p.name, 16, laneY - 40);
+      // Progress calculation
+      const progress = Math.min(1, Math.max(0, (p.distance || 0) / distanceToWin));
+      const avX = startX + (endX - startX) * progress;
 
       // Lane line
-      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(80, laneY); ctx.lineTo(dollX - 30, laneY); ctx.stroke();
+      ctx.strokeStyle = isMe ? 'rgba(35,220,130,0.3)' : 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = isMe ? 2 : 1;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(startX - 10, laneY + 22);
+      ctx.lineTo(finishX, laneY + 22);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-      const isMe = p.game_id === this.myGameId;
-      if (isMe) {
-        const av = this.myAvatar;
-        if (!p.alive) av.setState(ANIM.FALL);
-        else if (p.finished) av.setState(ANIM.VICTORY);
-        else if (phase === 'RED') av.setState(ANIM.FREEZE);
-        else if (phase === 'GREEN' && this._latestScore > 1.5) av.setState(ANIM.RUN);
-        else av.setState(ANIM.IDLE);
+      // Player name and ID tag
+      ctx.font = isMe ? 'bold 12px Outfit' : '11px Outfit';
+      ctx.fillStyle = !p.alive ? 'rgba(230,45,55,0.9)' : isMe ? 'rgba(35,220,130,0.95)' : 'rgba(255,255,255,0.75)';
+      ctx.textAlign = 'left';
+      const tag = !p.alive ? '💀 ELIMINATED' : p.finished ? '🏆 FINISHED' : isMe ? '⭐ YOU' : '';
+      ctx.fillText(`${p.name} #${av.number} ${tag}`, startX - 8, laneY - 45);
 
-        av.draw(ctx, avX, laneY, count > 2 ? 0.75 : 0.9);
+      // State determination:
+      // Local player uses tracked _latestScore; other players use server-reported is_moving!
+      if (!p.alive) {
+        av.setState(ANIM.FALL);
+      } else if (p.finished) {
+        av.setState(ANIM.VICTORY);
+      } else if (phase === 'RED') {
+        av.setState(ANIM.FREEZE);
+      } else if (phase === 'GREEN') {
+        if (isMe) {
+          av.setState(this._latestScore > 2.0 ? ANIM.RUN : ANIM.IDLE);
+        } else {
+          av.setState(p.is_moving ? ANIM.RUN : ANIM.IDLE);
+        }
       } else {
-        const otherAv = new SquidPlayer(p.game_id.slice(-3));
-        if (!p.alive) otherAv.setState(ANIM.FALL);
-        else if (p.finished) otherAv.setState(ANIM.VICTORY);
-        else if (phase === 'RED') otherAv.setState(ANIM.FREEZE);
-        else if (phase === 'GREEN' && p.distance > 0) otherAv.setState(ANIM.RUN);
-        else otherAv.setState(ANIM.IDLE);
+        av.setState(ANIM.IDLE);
+      }
 
-        otherAv.draw(ctx, avX, laneY, count > 2 ? 0.75 : 0.9);
+      // Draw Avatar
+      const pScale = (1.15 - progress * 0.3) * (count > 2 ? 0.8 : 0.95);
+      av.draw(ctx, avX, laneY, pScale);
+
+      // Elimination X crosshair
+      if (!p.alive) {
+        const r = 26 * pScale;
+        ctx.strokeStyle = '#e62d37';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(avX - r, laneY - 80 * pScale); ctx.lineTo(avX + r, laneY - 5 * pScale); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(avX + r, laneY - 80 * pScale); ctx.lineTo(avX - r, laneY - 5 * pScale); ctx.stroke();
       }
     });
+
+    // Movement meter for local player
+    if (phase === 'RED' || phase === 'GREEN') {
+      this._drawMoveMeter(ctx, w, h);
+    }
+
+    // RED LIGHT dramatic vignette
+    if (phase === 'RED') {
+      const vignette = ctx.createRadialGradient(w / 2, h / 2, h * 0.2, w / 2, h / 2, h * 0.8);
+      vignette.addColorStop(0, 'rgba(0,0,0,0)');
+      vignette.addColorStop(1, 'rgba(180,20,20,0.2)');
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, w, h);
+    }
+  },
+
+  _drawMoveMeter(ctx, w, h) {
+    const isRed = this.matchState?.phase === 'RED';
+    const score = this._latestScore || 0;
+    const threshold = isRed ? 3.0 : 2.0;
+    const danger = isRed ? Math.min(1, score / 6) : 0;
+    const activity = Math.min(1, score / 8);
+
+    const mx = 24, my = h - 80, mw = 160, mh = 14;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.beginPath(); ctx.roundRect(mx - 4, my - 22, mw + 8, mh + 28, 8); ctx.fill();
+
+    ctx.font = 'bold 10px Outfit';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.textAlign = 'left';
+    ctx.fillText(isRed ? '⚠ YOUR MOVEMENT' : '🏃 YOUR MOVEMENT', mx, my - 6);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.beginPath(); ctx.roundRect(mx, my, mw, mh, mh / 2); ctx.fill();
+
+    const fillColor = isRed
+      ? `rgba(${Math.round(200 + 55 * danger)}, ${Math.round(30 * (1 - danger))}, 30, 0.85)`
+      : 'rgba(35,220,100,0.85)';
+    ctx.fillStyle = fillColor;
+    ctx.beginPath(); ctx.roundRect(mx, my, mw * (isRed ? danger : activity), mh, mh / 2); ctx.fill();
+
+    if (isRed) {
+      const tx = mx + mw * (threshold / 6);
+      ctx.strokeStyle = 'rgba(255,255,100,0.8)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(tx, my - 3); ctx.lineTo(tx, my + mh + 3); ctx.stroke();
+      ctx.setLineDash([]);
+    }
   },
 
   _showMultiResult(s) {
     if (this.pose) { this.pose.stop(); this.pose = null; }
     if (this.animFrame) { cancelAnimationFrame(this.animFrame); this.animFrame = null; }
+    Sound.stopSong();
 
     const winner = s.winner_game_id;
     const me = s.players?.[this.myGameId];
-    const isWinner = winner === this.myGameId;
+    const isWinner = winner && winner === this.myGameId;
+
+    if (isWinner) {
+      setTimeout(() => Sound.victory(), 200);
+    } else if (me && !me.alive) {
+      setTimeout(() => Sound.gunshot(), 100);
+    }
 
     el('result-icon').textContent = isWinner ? '🏆' : me?.finished ? '✅' : '💀';
     el('result-title').textContent = isWinner ? 'YOU WIN!' : me?.finished ? 'FINISHED' : 'ELIMINATED';
-    el('result-title').className = 'result-title ' + (isWinner ? 'victory' : 'eliminated');
+    el('result-title').className = 'result-title ' + (isWinner ? 'victory' : me?.finished ? '' : 'eliminated');
     el('result-score').textContent = (me?.score || 0) + ' pts';
-    el('res-distance').textContent = (me?.distance || 0).toFixed(1) + ' / 100';
+    el('res-distance').textContent = (me?.distance || 0).toFixed(1) + ' / ' + (s.distance_to_win || 200.0).toFixed(1);
     el('res-time').textContent = '—';
     el('res-freeze').textContent = (me?.longest_freeze_sec || 0).toFixed(1) + 's';
 
@@ -328,9 +467,12 @@ const Multi = {
   },
 
   leave() {
+    Sound.stopSong();
     if (this.ws) { this.ws.close(); this.ws = null; }
     if (this.pose) { this.pose.stop(); this.pose = null; }
     if (this.animFrame) { cancelAnimationFrame(this.animFrame); this.animFrame = null; }
+    this.avatars = {};
+    this.matchState = null;
     el('multi-choose').classList.remove('hidden');
     el('multi-lobby').classList.add('hidden');
     showView('view-menu');
